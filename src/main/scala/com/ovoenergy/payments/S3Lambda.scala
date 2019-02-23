@@ -4,12 +4,13 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{Future, Promise}
 import scala.scalajs.js
 import scala.scalajs.js.annotation.{JSExportTopLevel, JSImport, JSName}
+import scala.util.{Failure, Success}
 
 
 object Lambda {
 
   @JSExportTopLevel("handler")
-  def handler(event: S3PutEvent, context: js.Object): Unit = {
+  def handler(event: S3PutEvent, context: js.Object, callback: js.Function2[Error, Object, Unit]): Unit = {
 
     val s3Client = new S3()
     val s3Record = event.Records.head.s3
@@ -18,6 +19,10 @@ object Lambda {
     println(s"Processing '$key' from bucket '$bucket'")
     val content = getContent(bucket, key)(s3Client)
     content.foreach(txt => println(s"There are ${txt.count(_ == '\n')} lines in this txt."))
+    content.andThen {
+      case Success(txt) => callback(null, TextFileInfo(key, txt.count(_ == '\n')))
+      case Failure(err) => callback(Error(err.getClass.getName, err.getMessage), null)
+    }
   }
 
   private def getContent(bucket: String, key: String)(s3Client: S3): Future[String] = {
@@ -32,6 +37,16 @@ object Lambda {
     })
     result.future
   }
+}
+
+@js.native
+trait TextFileInfo extends js.Object{
+  val fileName: String = js.native
+  val numberOfLines: Int = js.native
+}
+
+object TextFileInfo{
+  def apply(fileName: String, numberOfLines: Int): TextFileInfo = js.Dynamic.literal("fileName" -> fileName, "numberOfLines" -> numberOfLines).asInstanceOf[TextFileInfo]
 }
 
 @js.native
@@ -60,6 +75,10 @@ trait GetObjectResponse extends js.Object {
 trait Error extends js.Object {
   val code: String = js.native
   val message: String = js.native
+}
+
+object Error{
+  def apply(code: String, message: String): Error = js.Dynamic.literal("code" -> code, "message" -> message).asInstanceOf[Error]
 }
 
 @js.native
